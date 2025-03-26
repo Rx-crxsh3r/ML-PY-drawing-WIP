@@ -1,5 +1,7 @@
 import pickle
 import os.path
+import tkinter
+import tkinter.messagebox
 import numpy as np
 import PIL.Image, PIL.ImageDraw
 import cv2 as cv
@@ -143,5 +145,141 @@ class DrawingClassifier:
         self.root.attributes("-topmost", True)
         self.root.mainloop()
 
+    def paint(self, event):
+        x1, y1 = (event.x - 1), (event.y - 1)
+        x2, y2 = (event.x + 1), (event.y + 1)
+        self.canvas.create_rectangle(x1, y1, x2, y2, fill = "black", width = self.brushWidth)
+        self.draw.rectangle([x1, y1, x2 + self.brushWidth, y2 + self.brushWidth], fill = "black", width = self.brushWidth)
 
+    def save(self, classNum):
+        self.image1.save("temp.png")
+        image = PIL.Image.open("temp.png")
+        image = thumbnail((50, 50), PIL.Image.LANCZOS)
+        
+        if classNum == 1:
+            image.save(f"{self.projectName}/{self.class1}/{self.class1_counter}.png", "PNG")
+            self.class1_counter += 1
+        
+        elif classNum == 2:
+            image.save(f"{self.projectName}/{self.class2}/{self.class2_counter}.png", "PNG")
+            self.class2_counter += 1
+        
+        elif classNum == 3:
+            image.save(f"{self.projectName}/{self.class3}/{self.class3_counter}.png", "PNG")
+            self.class3_counter += 1
+        
+        self.clear()
 
+    def brushminus(self):
+        if self.brushWidth > 1:
+            self.brushWidth -= 1
+    
+    def brushplus(self):
+        if self.brushWidth < 100:
+            self.brushWidth += 1
+
+    def clear(self):
+        self.canvas.delete("all")
+
+        #not just the canvas needs to be clear, whatever we drew using PIL also needs to be cleared
+        self.draw.rectangle([0, 0, 800, 800], fill = "white")
+
+    def trainModel(self):
+        imageList = np.array([])
+        classList = np.array([])
+
+        for x in range(1, self.class1_counter):
+            image = cv.imread(f"{self.projectName}/{self.class1}/{x}.png")[:, :, 0]
+            image = image.reshape(2500)
+            imageList = np.append(imageList, image)
+            classList = np.append(classList, 1)
+
+        for x in range(1, self.class2_counter):
+            image = cv.imread(f"{self.projectName}/{self.class2}/{x}.png")[:, :, 0]
+            image = image.reshape(2500)
+            imageList = np.append(imageList, image)
+            classList = np.append(classList, 2)
+
+        for x in range(1, self.class3_counter):
+            image = cv.imread(f"{self.projectName}/{self.class3}/{x}.png")[:, :, 0]
+            image = image.reshape(2500)
+            imageList = np.append(imageList, image)
+            classList = np.append(classList, 3)
+        
+        imageList = imageList.reshape(self.class1_counter + self.class2_counter + self.class3_counter - 1, 2500)
+       
+        self.classifier.fit(imageList, classList)
+        tkinter.messagebox.showinfo("Training Progress", "Model has been trained successfully", parent = self.root)
+    
+    def saveModel(self):
+        filePath = filedialog.asksaveasfilename(defaultextension = "pickle")
+        with open(filePath, "wb") as file:
+            pickle.dump(self.clf, file)
+        tkinter.messagebox.showinfo("Model Saving Progress", "Model has been saved successfully", parent = self.root)
+       
+        ########or can be done like:
+        # with open(f"{self.projectName}/model.pkl", "wb") as file:
+        #     pickle.dump({"c1": self.class1, "c2": self.class2, "c3": self.class3, "c1c": self.class1_counter, "c2c": self.class2_counter, "c3c": self.class3_counter, "clf": self.classifier}, file)
+        # tkinter.messagebox.showinfo("Model Saving Progress", "Model has been saved successfully", parent = self.root)
+
+    def loadModel(self):
+        filePath = filedialog.askopenfilename()
+        with open(filePath, "rb") as file:
+            self.classifier = pickle.load(file)
+        tkinter.messagebox.showinfo("Model Loading Progress", "Model has been loaded successfully", parent = self.root)
+    
+    def changeModel(self):
+        if isinstance(self.classifier, LinearSVC):
+            self.classifier = KNeighborsClassifier()
+        elif isinstance(self.classifier, KNeighborsClassifier):
+            self.classifier = LogisticRegression()
+        elif isinstance(self.classifier, LogisticRegression):
+            self.classifier = DecisionTreeClassifier()
+        elif isinstance(self.classifier, DecisionTreeClassifier):
+            self.classifier = GaussianNB()
+        elif isinstance(self.classifier, GaussianNB):
+            self.classifier = LinearSVC()
+        self.statusLabel.config(text = f"Current Model: {type(self.classifier).__name__}")
+
+    def predictClass(self):
+        self.image1.save("temp.png")
+        image = PIL.Image.open("temp.png")
+        image.thumbnail((50, 50), PIL.Image.LANCZOS)
+        image.save("predictClass.png"), "PNG")
+        
+        image = cv.imread("predictClass.png")[:, :, 0]
+        image = image.reshape(2500)
+        prediction = self.classifier.predict([image])
+        if prediction[0] == 1:
+            tkinter.messagebox.showinfo("Prediction", f"Prediction: {self.class1}", parent = self.root)
+        elif prediction[0] == 2:
+            tkinter.messagebox.showinfo("Prediction", f"This is probably a(n) {self.class2}", parent = self.root)
+        elif prediction[0] == 3:
+            tkinter.messagebox.showinfo("Prediction", f"Prediction: {self.class3}", parent = self.root)
+        
+    def saveEverything(self):
+        data = {
+            "c1": self.class1,
+            "c2": self.class2,
+            "c3": self.class3,
+            "c1c": self.class1_counter,
+            "c2c": self.class2_counter,
+            "c3c": self.class3_counter,
+            "clf": self.classifier,
+            "classifier": self.classifier,
+            "projectName": self.projectName}
+        with open(f"{self.projectName}/{self.projectName}_data.pickle", "wb") as f:
+            pickle.dump(data, f)
+           
+            tkinter.messagebox.showinfo("Saving Progress..", "Everything has been saved successfully", parent = self.root)
+
+        def onClosing(self):
+            answer = tkinter.messagebox.askyesnocancel("Exit..?", "Do you want to save everything before exiting?", parent = self.root)
+
+            if answer is not None:
+                if answer:
+                    self.saveEverything()
+                self.root.destroy()
+                exit()
+
+DrawingClassifier()
