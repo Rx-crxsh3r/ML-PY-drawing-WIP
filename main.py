@@ -4,7 +4,7 @@
 
 import pickle
 import os
-import os.path
+import sys
 import tkinter
 import tkinter.messagebox
 from tkinter import *
@@ -59,14 +59,20 @@ class DrawingClassifier:
         # Call the method to prompt for project/class names
         self.classesPrompt()
 
+        # Check if project setup was successful
+        if self.projectName is None:
+            sys.exit()
+
         # Initialize the graphical user interface
         self.initGUI()
 
     # -------------------------------------------------------------------------
+
+
     def classesPrompt(self):
         """
         Prompt the user for the project name and class names. If the project already
-        exists, load the previously saved model and counters.
+        exists, load the previously saved data.
         """
         # Create a temporary hidden root window for dialogs
         message = Tk()
@@ -81,29 +87,32 @@ class DrawingClassifier:
             message.destroy()
             return
 
-        # Check if the project directory already exists
-        if os.path.exists(self.projectName):
-            # Attempt to load previously saved data
+        data_file = os.path.join(self.projectName, f"{self.projectName}_data.pickle")
+
+        if os.path.exists(self.projectName) and os.path.exists(data_file):
             try:
-                with open(f"{self.projectName}/model.pkl", "rb") as file:
+                with open(data_file, "rb") as file:
                     data = pickle.load(file)
-                self.class1 = data["c1"]
-                self.class2 = data["c2"]
-                self.class3 = data["c3"]
-                self.class1_counter = data["c1c"]
-                self.class2_counter = data["c2c"]
-                self.class3_counter = data["c3c"]
-                self.classifier = data["clf"]
+                if not isinstance(data, dict):
+                    raise TypeError("Saved data is not a dictionary")
+                self.class1 = data.get("c1")
+                self.class2 = data.get("c2")
+                self.class3 = data.get("c3")
+                self.class1_counter = data.get("c1c", 1)
+                self.class2_counter = data.get("c2c", 1)
+                self.class3_counter = data.get("c3c", 1)
+                self.classifier = data.get("clf")
+                if None in [self.class1, self.class2, self.class3, self.classifier]:
+                    raise ValueError("Incomplete data in saved file")
             except Exception as e:
-                # Show an error message and prompt the user for the next action
-                response = tkinter.messagebox.askretrycancel(
+                response = messagebox.askretrycancel(
                     "Error",
-                    f"Error loading model: {e}\nWould you like to retry or create a new project?",
+                    f"Error loading data: {e}\nRetry or create new project?",
                     parent=message
                 )
-                if response:  # Retry loading the model
+                if response: # Retry loading the model
                     self.classesPrompt()
-                else:  # Create a new project
+                else: # Create a new project
                     self.createNewProject(message)
         else:
             # If the project doesn't exist, create new project directories
@@ -113,21 +122,34 @@ class DrawingClassifier:
         message.destroy()
 
     # -------------------------------------------------------------------------
+
+
     def createNewProject(self, parent):
         """
         Create a new project by prompting for class names and initializing counters,
         classifier, and directories.
         """
-        # Prompt for each class name
         self.class1 = simpledialog.askstring("Class 1",
-                                               "Enter the name of the first class",
-                                               parent=parent)
+                                              "Enter the name of the first class",
+                                              parent=parent)
+        if not self.class1:
+            self.projectName = None
+            return
+
         self.class2 = simpledialog.askstring("Class 2",
-                                               "Enter the name of the second class",
-                                               parent=parent)
+                                              "Enter the name of the second class",
+                                              parent=parent)
+        if not self.class2:
+            self.projectName = None
+            return
+
         self.class3 = simpledialog.askstring("Class 3",
-                                               "Enter the name of the third class",
-                                               parent=parent)
+                                              "Enter the name of the third class",
+                                              parent=parent)
+        if not self.class3:
+            self.projectName = None
+            return
+
         # Initialize counters to 1 (first image index)
         self.class1_counter = 1
         self.class2_counter = 1
@@ -136,19 +158,18 @@ class DrawingClassifier:
         # Default classifier is LinearSVC
         self.classifier = LinearSVC()
 
-        # Create the project directory and subdirectories for each class
         try:
-            os.mkdir(self.projectName)  # Corrected from os.mdkir to os.mkdir
-            os.chdir(self.projectName)
-            os.mkdir(self.class1)
-            os.mkdir(self.class2)
-            os.mkdir(self.class3)
-            os.chdir("..")
+            os.mkdir(self.projectName)
+            os.mkdir(os.path.join(self.projectName, self.class1))
+            os.mkdir(os.path.join(self.projectName, self.class2))
+            os.mkdir(os.path.join(self.projectName, self.class3))
         except Exception as e:
-            tkinter.messagebox.showerror("Error", f"Error creating project directories: {e}",
-                                           parent=parent)
+            messagebox.showerror("Error", f"Error creating directories: {e}", parent=parent)
+            self.projectName = None
 
     # -------------------------------------------------------------------------
+
+
     def initGUI(self):
         """
         Initialize the graphical user interface, including the drawing canvas and control buttons.
@@ -236,6 +257,8 @@ class DrawingClassifier:
         self.root.mainloop()
 
     # -------------------------------------------------------------------------
+
+
     def paint(self, event):
         """
         Callback method for drawing on the canvas.
@@ -250,6 +273,8 @@ class DrawingClassifier:
                             fill="black", width=self.brushWidth)
 
     # -------------------------------------------------------------------------
+
+
     def save(self, classNum):
         """
         Save the current canvas drawing as a thumbnail image for the specified class.
@@ -263,19 +288,21 @@ class DrawingClassifier:
 
         # Save the thumbnail into the appropriate class folder with a sequential name
         if classNum == 1:
-            image.save(f"{self.projectName}/{self.class1}/{self.class1_counter}.png", "PNG")
+            image.save(os.path.join(self.projectName, self.class1, f"{self.class1_counter}.png"), "PNG")
             self.class1_counter += 1
         elif classNum == 2:
-            image.save(f"{self.projectName}/{self.class2}/{self.class2_counter}.png", "PNG")
+            image.save(os.path.join(self.projectName, self.class2, f"{self.class2_counter}.png"), "PNG")
             self.class2_counter += 1
         elif classNum == 3:
-            image.save(f"{self.projectName}/{self.class3}/{self.class3_counter}.png", "PNG")
+            image.save(os.path.join(self.projectName, self.class3, f"{self.class3_counter}.png"), "PNG")
             self.class3_counter += 1
 
         # Clear the canvas after saving the image
         self.clear()
 
     # -------------------------------------------------------------------------
+
+
     def brushminus(self):
         """
         Decrease the brush width, ensuring it does not go below 1.
@@ -284,6 +311,8 @@ class DrawingClassifier:
             self.brushWidth -= 1
 
     # -------------------------------------------------------------------------
+
+
     def brushplus(self):
         """
         Increase the brush width, ensuring it does not exceed 100.
@@ -292,6 +321,8 @@ class DrawingClassifier:
             self.brushWidth += 1
 
     # -------------------------------------------------------------------------
+
+
     def clear(self):
         """
         Clear the drawing canvas and the underlying PIL image.
@@ -301,81 +332,73 @@ class DrawingClassifier:
         self.draw.rectangle([0, 0, 800, 800], fill="white")
 
     # -------------------------------------------------------------------------
+
+
     def trainModel(self):
         """
         Train the classifier using the images saved for each class.
         The images are loaded, flattened, and labeled accordingly.
         """
-        imageList = np.array([])
+        imageList = np.array([]).reshape(0, 2500)
         classList = np.array([])
 
-        # Loop through each image in class1 directory
-        for x in range(1, self.class1_counter):
-            img_path = f"{self.projectName}/{self.class1}/{x}.png"
-            image = cv.imread(img_path)[:, :, 0]
-            image = image.reshape(2500)
-            imageList = np.append(imageList, image)
-            classList = np.append(classList, 1)
+        # Process each class directory
+        for cls, counter, label in [(self.class1, self.class1_counter, 1),
+                                    (self.class2, self.class2_counter, 2),
+                                    (self.class3, self.class3_counter, 3)]:
+            for x in range(1, counter):
+                img_path = os.path.join(self.projectName, cls, f"{x}.png")
+                if os.path.exists(img_path):
+                    image = cv.imread(img_path)[:, :, 0]
+                    image = image.reshape(2500)
+                    imageList = np.vstack([imageList, image])
+                    classList = np.append(classList, label)
 
-        # Loop through each image in class2 directory
-        for x in range(1, self.class2_counter):
-            img_path = f"{self.projectName}/{self.class2}/{x}.png"
-            image = cv.imread(img_path)[:, :, 0]
-            image = image.reshape(2500)
-            imageList = np.append(imageList, image)
-            classList = np.append(classList, 2)
+        if len(imageList) == 0:
+            messagebox.showwarning("Training Warning", "No images found to train the model.")
+            return
 
-        # Loop through each image in class3 directory
-        for x in range(1, self.class3_counter):
-            img_path = f"{self.projectName}/{self.class3}/{x}.png"
-            image = cv.imread(img_path)[:, :, 0]
-            image = image.reshape(2500)
-            imageList = np.append(imageList, image)
-            classList = np.append(classList, 3)
-
-        # Reshape the image list into a matrix where each row is a flattened image
-        total_images = self.class1_counter + self.class2_counter + self.class3_counter - 3
-        imageList = imageList.reshape(total_images, 2500)
-
-        # Train the classifier with the image data and corresponding class labels
+        # Train the classifier
         self.classifier.fit(imageList, classList)
-
-        tkinter.messagebox.showinfo("Training Progress",
-                                    "Model has been trained successfully",
-                                    parent=self.root)
+        messagebox.showinfo("Training Progress", "Model has been trained successfully", parent=self.root)
 
     # -------------------------------------------------------------------------
+
+
     def saveModel(self):
         """
         Save the trained model to a file selected by the user.
-        Alternatively, the model and project information can be saved to the project directory.
         """
-        filePath = filedialog.asksaveasfilename(defaultextension="pickle")
+        filePath = filedialog.asksaveasfilename(defaultextension=".pickle")
+        if not filePath:
+            return
         try:
             with open(filePath, "wb") as file:
                 pickle.dump(self.classifier, file)
-            tkinter.messagebox.showinfo("Model Saving Progress",
-                                        "Model has been saved successfully",
-                                        parent=self.root)
+            messagebox.showinfo("Model Saving Progress", "Model has been saved successfully", parent=self.root)
         except Exception as e:
-            tkinter.messagebox.showerror("Error", f"Error saving model: {e}", parent=self.root)
+            messagebox.showerror("Error", f"Error saving model: {e}", parent=self.root)
 
     # -------------------------------------------------------------------------
+
+
     def loadModel(self):
         """
         Load a trained model from a file selected by the user.
         """
         filePath = filedialog.askopenfilename()
+        if not filePath:
+            return
         try:
             with open(filePath, "rb") as file:
                 self.classifier = pickle.load(file)
-            tkinter.messagebox.showinfo("Model Loading Progress",
-                                        "Model has been loaded successfully",
-                                        parent=self.root)
+            messagebox.showinfo("Model Loading Progress", "Model has been loaded successfully", parent=self.root)
         except Exception as e:
-            tkinter.messagebox.showerror("Error", f"Error loading model: {e}", parent=self.root)
+            messagebox.showerror("Error", f"Error loading model: {e}", parent=self.root)
 
     # -------------------------------------------------------------------------
+
+
     def changeModel(self):
         """
         Cycle through a set of predefined classifiers.
@@ -396,34 +419,34 @@ class DrawingClassifier:
         self.statusLabel.config(text=f"Current Model: {type(self.classifier).__name__}")
 
     # -------------------------------------------------------------------------
+
+
     def predictClass(self):
         """
         Predict the class of the current drawing.
-        The drawn image is resized and processed before being passed to the classifier.
+        The drawing is resized to a thumbnail, flattened, and passed to the classifier.
+        The predicted class is displayed in a message box.
         """
-        # Save the current drawing to a temporary file
         self.image1.save("temp.png")
         image = PIL.Image.open("temp.png")
         image.thumbnail((50, 50), PIL.Image.LANCZOS)
         image.save("predictClass.png", "PNG")
 
-        # Load the processed image using OpenCV and flatten it for prediction
         image = cv.imread("predictClass.png")[:, :, 0]
         image = image.reshape(2500)
-        prediction = self.classifier.predict([image])
-        # Display prediction results in a message box
-        if prediction[0] == 1:
-            tkinter.messagebox.showinfo("Prediction", f"Prediction: {self.class1}", parent=self.root)
-        elif prediction[0] == 2:
-            tkinter.messagebox.showinfo("Prediction", f"Prediction: {self.class2}", parent=self.root)
-        elif prediction[0] == 3:
-            tkinter.messagebox.showinfo("Prediction", f"Prediction: {self.class3}", parent=self.root)
+        try:
+            prediction = self.classifier.predict([image])[0]
+            class_name = {1: self.class1, 2: self.class2, 3: self.class3}.get(prediction, "Unknown")
+            messagebox.showinfo("Prediction", f"Prediction: {class_name}", parent=self.root)
+        except Exception as e:
+            messagebox.showerror("Prediction Error", f"Failed to predict: {e}", parent=self.root)
 
     # -------------------------------------------------------------------------
+
+
     def saveEverything(self):
         """
-        Save all project-related data, including class names, counters, classifier,
-        and project name into a single pickle file.
+        Save all project-related data.
         """
         data = {
             "c1": self.class1,
@@ -436,32 +459,28 @@ class DrawingClassifier:
             "projectName": self.projectName
         }
         try:
-            with open(f"{self.projectName}/{self.projectName}_data.pickle", "wb") as f:
+            data_file = os.path.join(self.projectName, f"{self.projectName}_data.pickle")
+            with open(data_file, "wb") as f:
                 pickle.dump(data, f)
-            tkinter.messagebox.showinfo("Saving Progress..",
-                                        "Everything has been saved successfully",
-                                        parent=self.root)
+            messagebox.showinfo("Saving Progress", "Everything has been saved successfully", parent=self.root)
         except Exception as e:
-            tkinter.messagebox.showerror("Error", f"Error saving data: {e}", parent=self.root)
+            messagebox.showerror("Error", f"Error saving data: {e}", parent=self.root)
 
     # -------------------------------------------------------------------------
+
+
     def onClosing(self):
         """
-        Prompt the user to save all data before closing the application.
+        Prompt the user to save data before closing.
         """
-        answer = tkinter.messagebox.askyesnocancel("Exit..?",
-                                                   "Do you want to save everything before exiting?",
-                                                   parent=self.root)
+        answer = messagebox.askyesnocancel("Exit..?", "Do you want to save everything before exiting?", parent=self.root)
         if answer is not None:
             if answer:
                 self.saveEverything()
             self.root.destroy()
-            exit()
+            sys.exit()
 
-# =============================================================================
-# MAIN PROGRAM ENTRY POINT
 # =============================================================================
 
 if __name__ == "__main__":
-    # Create an instance of the DrawingClassifier application.
     DrawingClassifier()
